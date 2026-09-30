@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Quality Sentinel</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f5f9fc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --gray: #64748b;
+      --low: #22c55e;
+      --med: #f59e0b;
+      --high: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, var(--bg), #e0f2fe);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 2.1rem;
+      margin: 0 0 1.5rem;
+      color: #0f172a;
+      font-weight: 700;
+    }
+
+    #status {
+      font-size: 1.1rem;
+      padding: 10px 24px;
+      border-radius: 999px;
+      margin-bottom: 2rem;
+      font-weight: 500;
+    }
+
+    .connected {
+      background: var(--low);
+      color: white;
+    }
+
+    .disconnected {
+      background: var(--high);
+      color: white;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 1.5rem;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 20px 35px rgba(0, 0, 0, 0.12);
+    }
+
+    .card h3 {
+      margin: 0 0 0.8rem;
+      font-size: 1.05rem;
+      color: var(--gray);
+      font-weight: 500;
+    }
+
+    .value {
+      font-size: 3.2rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .label {
+      font-size: 1.05rem;
+      color: var(--gray);
+      margin-top: 0.3rem;
+    }
+
+    #risk-card {
+      grid-column: 1 / -1;
+      padding: 2rem;
+    }
+
+    #risk {
+      font-size: 2.8rem;
+      font-weight: 700;
+    }
+
+    .low {
+      color: var(--low);
+    }
+
+    .medium {
+      color: var(--med);
+    }
+
+    .high {
+      color: var(--high);
+    }
+
+    #ai {
+      margin-top: 2.5rem;
+      width: 100%;
+      max-width: 780px;
+      background: white;
+      border-radius: 20px;
+      padding: 1.8rem 2rem;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+      border-left: 6px solid #6366f1;
+    }
+
+    #ai strong {
+      display: block;
+      font-size: 1.2rem;
+      margin-bottom: 0.8rem;
+      color: #4f46e5;
+    }
+
+    #aiText {
+      font-size: 1.15rem;
+      line-height: 1.55;
+      color: #1e293b;
+    }
+
+    .config-note {
+      margin-top: 2rem;
+      max-width: 780px;
+      color: var(--gray);
+      font-size: 0.9rem;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Air Quality Sentinel</h1>
+
+  <div id="status" class="disconnected">Connecting…</div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Temperature</h3>
+      <div class="value" id="t">--</div>
+      <div class="label">°C</div>
+    </div>
+
+    <div class="card">
+      <h3>Humidity</h3>
+      <div class="value" id="h">--</div>
+      <div class="label">%</div>
+    </div>
+
+    <div class="card">
+      <h3>Light</h3>
+      <div class="value" id="l">--</div>
+      <div class="label">%</div>
+    </div>
+
+    <div class="card" id="risk-card">
+      <h3>Indoor Risk Level</h3>
+      <div id="r">--</div>
+    </div>
+  </div>
+
+  <div id="ai">
+    <strong>Personal advice</strong>
+    <span id="aiText">Waiting for sensor data…</span>
+  </div>
+
+  <p class="config-note">
+    MQTT broker: broker.hivemq.com · Topic: demo/simple/topic
+  </p>
+
+  <script>
+    const broker = {
+      host: "broker.hivemq.com",
+      port: 8000,
+      path: "/mqtt"
+    };
+
+    const topic = "demo/simple/topic";
+    const clientId = "dash_" + Math.random().toString(16).slice(2, 10);
+
+    const client = new Paho.Client(
+      broker.host,
+      broker.port,
+      broker.path,
+      clientId
+    );
+
+    client.onConnectionLost = (event) => {
+      if (event.errorCode !== 0) {
+        setStatus("Lost connection", false);
+      }
+    };
+
+    client.onMessageArrived = (message) => {
+      try {
+        const data = JSON.parse(message.payloadString);
+
+        if (data.temperature !== undefined) {
+          document.getElementById("t").textContent =
+            Number(data.temperature).toFixed(1);
+        }
+
+        if (data.humidity !== undefined) {
+          document.getElementById("h").textContent =
+            Number(data.humidity).toFixed(1);
+        }
+
+        if (data.light !== undefined) {
+          document.getElementById("l").textContent = data.light;
+        }
+
+        if (data.risk) {
+          const riskElement = document.getElementById("r");
+
+          riskElement.textContent = data.risk;
+          riskElement.className = data.risk.toLowerCase();
+
+          // Optional AI integration.
+          // This requires a backend. Never place an OpenAI API key in this file.
+          getAIAdvice(data);
+        }
+      } catch (error) {
+        console.error("Invalid MQTT message:", error);
+      }
+    };
+
+    function setStatus(text, connected) {
+      const status = document.getElementById("status");
+      status.textContent = text;
+      status.className = connected ? "connected" : "disconnected";
+    }
+
+    client.connect({
+      useSSL: false,
+      timeout: 8,
+
+      onSuccess: () => {
+        setStatus("Connected", true);
+        client.subscribe(topic);
+        console.log("Subscribed to:", topic);
+      },
+
+      onFailure: (error) => {
+        setStatus("Connection failed", false);
+        console.error("MQTT connection failed:", error);
+      }
+    });
+
+    async function getAIAdvice(data) {
+      const element = document.getElementById("aiText");
+
+      // AI endpoint should be implemented on a server/backend.
+      // Do not expose an OpenAI API key in browser JavaScript.
+      const endpoint = "/api/advice";
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            temperature: data.temperature,
+            humidity: data.humidity,
+            light: data.light,
+            risk: data.risk,
+            riskScore: data.riskScore
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`AI endpoint returned ${response.status}`);
+        }
+
+        const result = await response.json();
+        element.textContent = result.advice || "No advice available.";
+      } catch (error) {
+        console.warn("AI advice unavailable:", error);
+        element.textContent =
+          "AI advice is unavailable. Check the backend configuration.";
+      }
+    }
+  </script>
+</body>
+</html>

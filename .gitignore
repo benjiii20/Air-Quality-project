@@ -1,0 +1,25 @@
+# Arduino
+*.hex
+*.elf
+*.bin
+*.eep
+
+# Local configuration
+.env
+.env.*
+secrets.h
+config.local.h
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Node.js
+node_modules/
